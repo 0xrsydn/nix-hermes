@@ -1,0 +1,170 @@
+{ lib
+, python312Packages
+, python312
+, fetchFromGitHub
+, fetchPypi
+, makeWrapper
+, nodejs_22
+, ripgrep
+, ffmpeg
+, git
+}:
+
+let
+  python = python312;
+  pythonPackages = python312Packages;
+
+  # --- Missing PyPI packages ---
+
+  fal-client = pythonPackages.buildPythonPackage rec {
+    pname = "fal-client";
+    version = "0.13.1";
+    pyproject = true;
+    src = fetchPypi {
+      pname = "fal_client";
+      inherit version;
+      hash = "sha256-nhwH0KYbRSqP+0jBmd5fJUPXVG8SMPYxI3BEMSfF6Tc=";
+    };
+    build-system = with pythonPackages; [ setuptools setuptools-scm ];
+    dependencies = with pythonPackages; [
+      httpx
+      httpx-sse
+      msgpack
+      websockets
+    ];
+    doCheck = false;
+    pythonImportsCheck = [ "fal_client" ];
+  };
+
+  honcho-ai = pythonPackages.buildPythonPackage rec {
+    pname = "honcho-ai";
+    version = "2.0.1";
+    pyproject = true;
+    src = fetchPypi {
+      pname = "honcho_ai";
+      inherit version;
+      hash = "sha256-b97r+UVOYrxSPVeIjlA1nme6r9sh9oYh+cFOCNwAYjo=";
+    };
+    build-system = with pythonPackages; [ setuptools wheel ];
+    dependencies = with pythonPackages; [
+      httpx
+      pydantic
+      typing-extensions
+    ];
+    doCheck = false;
+    pythonImportsCheck = [ "honcho" ];
+  };
+
+  agent-client-protocol = pythonPackages.buildPythonPackage rec {
+    pname = "agent-client-protocol";
+    version = "0.8.1";
+    pyproject = true;
+    src = fetchPypi {
+      pname = "agent_client_protocol";
+      inherit version;
+      hash = "sha256-G78VZjv1H2SUJZf2OOMqYoTF2pGAVdlnLTUQ6WUUPb0=";
+    };
+    build-system = [ pythonPackages.pdm-backend ];
+    dependencies = with pythonPackages; [
+      pydantic
+    ];
+    doCheck = false;
+    pythonImportsCheck = [ "acp" ];
+  };
+
+  version = "0.2.0";
+  rev = "64d333204bb2e32cc90a58b5ec5a4db127396dfc";
+
+  src = fetchFromGitHub {
+    owner = "NousResearch";
+    repo = "hermes-agent";
+    inherit rev;
+    hash = "sha256-Li8jPEFDthj/AKmlwJhLWxItc34qcTrmJUDQ4kaSxVg=";
+    fetchSubmodules = true;
+  };
+
+in
+pythonPackages.buildPythonApplication {
+  pname = "hermes-agent";
+  inherit version src;
+  pyproject = true;
+
+  build-system = [ pythonPackages.setuptools ];
+
+  dependencies = with pythonPackages; [
+    # Core
+    openai
+    anthropic
+    python-dotenv
+    fire
+    httpx
+    rich
+    tenacity
+    pyyaml
+    requests
+    jinja2
+    pydantic
+    prompt-toolkit
+    # Tools
+    firecrawl-py
+    fal-client
+    # TTS
+    edge-tts
+    faster-whisper
+    # mini-swe-agent deps
+    litellm
+    typer
+    platformdirs
+    # Skills Hub
+    pyjwt
+    # Messaging
+    python-telegram-bot
+    discordpy
+    aiohttp
+    slack-bolt
+    slack-sdk
+    # Cron
+    croniter
+    # CLI
+    simple-term-menu
+    # TTS premium
+    elevenlabs
+    # Voice
+    sounddevice
+    numpy
+    # PTY
+    ptyprocess
+    # Honcho
+    honcho-ai
+    # MCP
+    mcp
+    # ACP
+    agent-client-protocol
+  ];
+
+  nativeBuildInputs = [ makeWrapper ];
+
+  # Don't run tests during build
+  doCheck = false;
+
+  # mini-swe-agent is included via fetchSubmodules and referenced at runtime
+
+  postFixup = ''
+    # Wrap binaries with runtime deps on PATH
+    for bin in $out/bin/hermes $out/bin/hermes-agent $out/bin/hermes-acp; do
+      if [ -f "$bin" ]; then
+        wrapProgram "$bin" \
+          --prefix PATH : ${lib.makeBinPath [ nodejs_22 ripgrep ffmpeg git ]}
+      fi
+    done
+  '';
+
+  meta = with lib; {
+    description = "The self-improving AI agent by Nous Research";
+    homepage = "https://github.com/NousResearch/hermes-agent";
+    license = licenses.mit;
+    maintainers = [ ];
+    mainProgram = "hermes";
+    platforms = platforms.linux ++ platforms.darwin;
+  };
+}
