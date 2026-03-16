@@ -166,9 +166,27 @@ in
       type = types.nullOr types.path;
       default = null;
       description = ''
-        Path to an auth.json file containing OAuth credentials (Nous Portal, Codex, Anthropic OAuth).
-        Use with sops-nix to manage OAuth tokens declaratively.
-        If null, auth.json is managed at runtime via `hermes model`.
+        Path to an auth.json seed file containing OAuth credentials
+        (Nous Portal, Codex, Anthropic OAuth).
+
+        This file is only copied on first deploy — if auth.json already exists
+        in the state directory, it is NOT overwritten. This preserves runtime
+        token refreshes across rebuilds and restarts.
+
+        To force a re-seed, delete the existing auth.json first:
+          rm /var/lib/hermes/.hermes/auth.json
+
+        If null, auth.json is managed entirely at runtime via `hermes login`.
+      '';
+    };
+
+    authFileForceOverwrite = mkOption {
+      type = types.bool;
+      default = false;
+      description = ''
+        If true, always overwrite auth.json from authFile on activation.
+        WARNING: This destroys any runtime-refreshed tokens.
+        Only use for testing or when you know the seed file has fresh tokens.
       '';
     };
 
@@ -282,9 +300,15 @@ in
       # Link config file
       install -o ${cfg.user} -g ${cfg.group} -m 0640 -D ${configFile} ${cfg.stateDir}/.hermes/cli-config.yaml
 
-      # Link auth file if provided
+      # Seed auth file if provided (only if not already present, unless force overwrite)
       ${lib.optionalString (cfg.authFile != null) ''
-        install -o ${cfg.user} -g ${cfg.group} -m 0600 ${cfg.authFile} ${cfg.stateDir}/.hermes/auth.json
+        ${if cfg.authFileForceOverwrite then ''
+          install -o ${cfg.user} -g ${cfg.group} -m 0600 ${cfg.authFile} ${cfg.stateDir}/.hermes/auth.json
+        '' else ''
+          if [ ! -f ${cfg.stateDir}/.hermes/auth.json ]; then
+            install -o ${cfg.user} -g ${cfg.group} -m 0600 ${cfg.authFile} ${cfg.stateDir}/.hermes/auth.json
+          fi
+        ''}
       ''}
 
       # Link documents into workspace
