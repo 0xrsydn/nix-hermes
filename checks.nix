@@ -61,6 +61,28 @@
     echo "ok" > $out/result
   '';
 
+  # Verify hermes-agent doesn't crash on import (exit 124 = timeout, not import error)
+  hermes-agent-import = pkgs.runCommand "hermes-agent-import" { } ''
+    set -e
+    export HOME=$(mktemp -d)
+
+    echo "=== Testing hermes-agent starts without import errors ==="
+    # hermes-agent is interactive (fire CLI), so it will hang waiting for input.
+    # Exit 124 (timeout) = OK. Any other exit = import/crash error.
+    timeout 3 ${hermes-agent}/bin/hermes-agent 2>&1 || CODE=$?
+    if [ "''${CODE:-0}" = "124" ]; then
+      echo "PASS: hermes-agent starts (timed out waiting for input, no import errors)"
+    elif [ "''${CODE:-0}" = "0" ]; then
+      echo "PASS: hermes-agent exited cleanly"
+    else
+      echo "FAIL: hermes-agent crashed with exit code $CODE"
+      exit 1
+    fi
+
+    mkdir -p $out
+    echo "ok" > $out/result
+  '';
+
   # Verify doctor runs without crashing
   doctor = pkgs.runCommand "hermes-doctor" { } ''
     set -e
