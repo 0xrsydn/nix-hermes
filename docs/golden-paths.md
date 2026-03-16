@@ -1,6 +1,6 @@
 # Golden Paths
 
-nix-hermes-agent is opinionated: **there should be one obvious way to deploy**.
+nix-hermes-agent is opinionated: **there should be one obvious way to deploy**. Used reference from (Nix Openclaw Repository)[https://github.com/openclaw/nix-openclaw/blob/main/docs/golden-paths.md] but customized to what I need in the future, including for single nixos server, remote execution-first, then gradually applied to macOS (via nix-darwin) and development device normally.
 
 A **Golden Path** is a supported topology + defaults + docs that:
 
