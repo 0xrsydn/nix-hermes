@@ -72,14 +72,14 @@ let
     pythonImportsCheck = [ "acp" ];
   };
 
-  version = "0.2.0";
-  rev = "64d333204bb2e32cc90a58b5ec5a4db127396dfc";
+  version = "0.3.0";
+  rev = "6ebb816e5611aaf1f3f7187ba8b10e985e899c75";
 
   src = fetchFromGitHub {
     owner = "NousResearch";
     repo = "hermes-agent";
     inherit rev;
-    hash = "sha256-Li8jPEFDthj/AKmlwJhLWxItc34qcTrmJUDQ4kaSxVg=";
+    hash = "sha256-JGjusff/jGjvCCdUtl9IErBTGmpIq6BVA5Gj8mwqVYg=";
     fetchSubmodules = true;
   };
 
