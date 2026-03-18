@@ -505,6 +505,13 @@ in
     system.activationScripts."hermes-agent-setup" = lib.stringAfter [ "users" ] ''
       set -euo pipefail
 
+      # Ensure required directories exist during activation (do not rely on tmpfiles ordering)
+      install -d -o ${cfg.user} -g ${cfg.group} -m 0750 ${cfg.stateDir}
+      install -d -o ${cfg.user} -g ${cfg.group} -m 0750 ${cfg.stateDir}/.hermes
+      install -d -o ${cfg.user} -g ${cfg.group} -m 0750 ${cfg.stateDir}/.hermes/skills
+      install -d -o ${cfg.user} -g ${cfg.group} -m 0750 ${cfg.workingDirectory}
+      install -d -o ${cfg.user} -g ${cfg.group} -m 0750 ${builtins.dirOf cfg.logPath}
+
       # Link config file
       install -o ${cfg.user} -g ${cfg.group} -m 0640 -D ${configFile} ${cfg.stateDir}/.hermes/cli-config.yaml
 
