@@ -36,7 +36,7 @@ let
 
   customSkillSpecs = lib.mapAttrsToList (name: value: {
     inherit name;
-    category = value.category;
+    inherit (value) category;
     source = toString value.source;
   }) cfg.skills.custom;
 

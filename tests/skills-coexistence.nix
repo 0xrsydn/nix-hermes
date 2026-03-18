@@ -1,4 +1,8 @@
-{ self, nixpkgs, system }:
+{
+  self,
+  nixpkgs,
+  system,
+}:
 
 let
   pkgs = import nixpkgs { inherit system; };
@@ -10,35 +14,37 @@ in
 pkgs.testers.runNixOSTest {
   name = "hermes-skills-coexistence";
 
-  nodes.machine = { ... }: {
-    imports = [ self.nixosModules.hermes-agent ];
+  nodes.machine =
+    { ... }:
+    {
+      imports = [ self.nixosModules.hermes-agent ];
 
-    services.hermes-agent = {
-      enable = true;
-      package = self.packages.${system}.hermes-agent;
-      skills = {
-        bundled.enable = false;
-        custom.repo-watch = {
-          category = "research";
-          source = testSkill;
+      services.hermes-agent = {
+        enable = true;
+        package = self.packages.${system}.hermes-agent;
+        skills = {
+          bundled.enable = false;
+          custom.repo-watch = {
+            category = "research";
+            source = testSkill;
+          };
+        };
+        documents = {
+          "SOUL.md" = "# SOUL.md\nTest soul\n";
+          "AGENTS.md" = "# AGENTS.md\nTest agents\n";
+          "USER.md" = "# USER.md\nTest user\n";
+        };
+        config = {
+          toolsets = [ "all" ];
+          model = {
+            default = "moonshotai/kimi-k2.5";
+            provider = "openrouter";
+          };
         };
       };
-      documents = {
-        "SOUL.md" = "# SOUL.md\nTest soul\n";
-        "AGENTS.md" = "# AGENTS.md\nTest agents\n";
-        "USER.md" = "# USER.md\nTest user\n";
-      };
-      config = {
-        toolsets = [ "all" ];
-        model = {
-          default = "moonshotai/kimi-k2.5";
-          provider = "openrouter";
-        };
-      };
+
+      system.stateVersion = "25.05";
     };
-
-    system.stateVersion = "25.05";
-  };
 
   testScript = ''
     machine.wait_for_unit("multi-user.target")
