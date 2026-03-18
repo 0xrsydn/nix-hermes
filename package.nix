@@ -185,6 +185,10 @@ pythonPackages.buildPythonApplication {
     done
   '';
 
+  passthru = {
+    upstreamSrc = src;
+  };
+
   meta = with lib; {
     description = "The self-improving AI agent by Nous Research";
     homepage = "https://github.com/NousResearch/hermes-agent";

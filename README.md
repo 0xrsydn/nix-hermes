@@ -89,6 +89,20 @@ Everything is configured in Nix. Config, documents, secrets, service — one `ni
       # "SOUL.md" = ./documents/SOUL.md;
     };
 
+    # ── Declarative skills (phase 1) ──
+    skills = {
+      bundled.enable = true;
+      optional = [
+        "creative/blender-mcp"
+      ];
+      custom = {
+        repo-watch = {
+          category = "research";
+          source = ./skills/repo-watch;
+        };
+      };
+    };
+
     # ── MCP servers ──
     mcpServers = {
       context7 = {
@@ -209,6 +223,7 @@ You (Telegram/Discord/WhatsApp/Slack) → Gateway → Tools → Machine does thi
 | `config` | attrset | `{}` | Declarative config (→ cli-config.yaml) |
 | `configFile` | path | `null` | Use existing config file (overrides `config`) |
 | `documents` | attrset | `{}` | Workspace files (string or path values) |
+| `skills` | attrset | `{}` | Declarative Hermes skills (bundled, optional, custom local) |
 | `environmentFiles` | list | `[]` | Secret env files (systemd EnvironmentFile) |
 | `environment` | attrset | `{}` | Non-secret env vars |
 | `authFile` | path | `null` | OAuth credentials file (auth.json) |
