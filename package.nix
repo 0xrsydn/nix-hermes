@@ -12,8 +12,16 @@
 }:
 
 let
-  python = python312;
-  pythonPackages = python312Packages;
+  # Override python package set to fix broken upstream tests
+  python = python312.override {
+    packageOverrides = _final: prev: {
+      sanic = prev.sanic.overridePythonAttrs (_old: {
+        # sanic 25.12.0 has a flaky test_keep_alive_client_timeout in nixpkgs sandbox
+        doCheck = false;
+      });
+    };
+  };
+  pythonPackages = python.pkgs;
 
   # --- Missing PyPI packages ---
 
