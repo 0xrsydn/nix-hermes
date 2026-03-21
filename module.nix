@@ -127,6 +127,8 @@ let
                     continue
                 target = out / rel
                 target.parent.mkdir(parents=True, exist_ok=True)
+                if target.exists():
+                    target.chmod(0o644)
                 shutil.copy2(desc, target)
 
         for rel_str in optional_skills:
@@ -148,6 +150,8 @@ let
                 if desc_src.exists():
                     desc_dst = out / rel.parts[0] / "DESCRIPTION.md"
                     desc_dst.parent.mkdir(parents=True, exist_ok=True)
+                    if desc_dst.exists():
+                        desc_dst.chmod(0o644)
                     shutil.copy2(desc_src, desc_dst)
 
         for spec in custom_skills:
