@@ -30,11 +30,12 @@
             inherit pkgs;
             inherit (self.packages.${system}) hermes-agent;
           })
-          // (lib.mapAttrs' (name: value: lib.nameValuePair "nightly-${name}" value)
-               (import ./checks.nix {
-                 inherit pkgs;
-                 hermes-agent = self.packages.${system}.hermes-agent-nightly;
-               }))
+          // (lib.mapAttrs' (name: value: lib.nameValuePair "nightly-${name}" value) (
+            import ./checks.nix {
+              inherit pkgs;
+              hermes-agent = self.packages.${system}.hermes-agent-nightly;
+            }
+          ))
           // {
             skills-coexistence = import ./tests/skills-coexistence.nix {
               inherit self nixpkgs system;
