@@ -30,12 +30,12 @@ let
 
   fal-client = pythonPackages.buildPythonPackage rec {
     pname = "fal-client";
-    version = "0.3.0";
+    version = "0.4.0";
     pyproject = true;
     src = fetchPypi {
       pname = "fal_client";
       inherit version;
-      hash = "sha256-HUOE6XBvQPbFOajY/TpIqH9HpOsSmkR4lh1JsbRiPPA=";
+      hash = "sha256-Affi7U2RHF4nWdrD7lW1IxA6ZEv3hBLDEYq5LaApMKw=";
     };
     build-system = with pythonPackages; [
       setuptools
