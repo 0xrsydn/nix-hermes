@@ -130,7 +130,6 @@ pythonPackages.buildPythonApplication {
     edge-tts
     faster-whisper
     # mini-swe-agent deps
-    litellm
     typer
     platformdirs
     # Skills Hub
