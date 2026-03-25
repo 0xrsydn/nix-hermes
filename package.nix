@@ -22,6 +22,10 @@ let
         # sanic 25.12.0 has a flaky test_keep_alive_client_timeout in nixpkgs sandbox
         doCheck = false;
       });
+      pytest-services = prev.pytest-services.overridePythonAttrs (_old: {
+        # pytest-services fails with PermissionError in Nix sandbox (/tmp/service-locks)
+        doCheck = false;
+      });
     };
   };
   pythonPackages = python.pkgs;
@@ -73,6 +77,36 @@ let
     pythonImportsCheck = [ "honcho" ];
   };
 
+  parallel-web = pythonPackages.buildPythonPackage rec {
+    pname = "parallel-web";
+    version = "0.4.2";
+    pyproject = true;
+    src = fetchPypi {
+      pname = "parallel_web";
+      inherit version;
+      hash = "sha256-WZtajzh9w1x9yMgeNy6t9pWKQKys6li/Fw38ZjwAPac=";
+    };
+    build-system = with pythonPackages; [
+      hatchling
+      hatch-fancy-pypi-readme
+    ];
+    pythonRelaxDeps = true;
+    postPatch = ''
+      # Relax exact hatchling pin so nixpkgs version works
+      sed -i 's/hatchling==1.26.3/hatchling>=1.26.3/' pyproject.toml
+    '';
+    dependencies = with pythonPackages; [
+      anyio
+      distro
+      httpx
+      pydantic
+      sniffio
+      typing-extensions
+    ];
+    doCheck = false;
+    pythonImportsCheck = [ "parallel" ];
+  };
+
   agent-client-protocol = pythonPackages.buildPythonPackage rec {
     pname = "agent-client-protocol";
     version = "0.8.1";
@@ -109,6 +143,9 @@ pythonPackages.buildPythonApplication {
 
   build-system = [ pythonPackages.setuptools ];
 
+  # litellm is compromised — strip it from wheel metadata so pythonRuntimeDepsCheck passes
+  pythonRemoveDeps = [ "litellm" ];
+
   dependencies = with pythonPackages; [
     # Core
     openai
@@ -126,6 +163,7 @@ pythonPackages.buildPythonApplication {
     # Tools
     firecrawl-py
     fal-client
+    parallel-web
     # TTS
     edge-tts
     faster-whisper
