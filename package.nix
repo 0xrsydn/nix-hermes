@@ -9,9 +9,9 @@
   ripgrep,
   ffmpeg,
   git,
-  pinVersion ? "0.3.0",
-  pinRev ? "6ebb816e5611aaf1f3f7187ba8b10e985e899c75",
-  pinHash ? "sha256-JGjusff/jGjvCCdUtl9IErBTGmpIq6BVA5Gj8mwqVYg=",
+  pinVersion ? "0.4.0",
+  pinRev ? "8416bc2142ad7494b3d72b055cd5a86a80472fe4",
+  pinHash ? "sha256-dKilXoJbu5thhCRpDYKTX9fAOq1JTqdBvuf9Ji1iY64=",
 }:
 
 let
@@ -24,6 +24,10 @@ let
       });
       pytest-services = prev.pytest-services.overridePythonAttrs (_old: {
         # pytest-services fails with PermissionError in Nix sandbox (/tmp/service-locks)
+        doCheck = false;
+      });
+      cherrypy = prev.cherrypy.overridePythonAttrs (_old: {
+        # cherrypy test_logging tests crash in macOS Nix sandbox (signal 0)
         doCheck = false;
       });
     };

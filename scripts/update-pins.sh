@@ -46,7 +46,7 @@ fi
 log "Parsed version: $upstream_version"
 
 # --- Compare with current ---
-current_version=$(awk -F'"' '/^  version = /{print $2}' "$package_file" | head -1)
+current_version=$(awk -F'"' '/pinVersion \? "/{print $2}' "$package_file" | head -1)
 log "Current pinned version: $current_version"
 
 if [[ "$current_version" == "$upstream_version" ]]; then
@@ -95,10 +95,10 @@ log "Computing fetchFromGitHub hash (with submodules)..."
 # Save original
 cp "$package_file" "$package_file.bak"
 
-# Update version, rev, and set hash to empty
-perl -0pi -e "s|version = \"[^\"]+\";|version = \"${upstream_version}\";|" "$package_file"
-perl -0pi -e "s|rev = \"[^\"]+\";|rev = \"${tag_sha}\";|" "$package_file"
-perl -0pi -e 's|hash = "sha256-[^"]+";|hash = "";|' "$package_file"
+# Update pinVersion, pinRev, and set pinHash to empty
+perl -0pi -e "s|pinVersion \\? \"[^\"]+\"|pinVersion \\? \"${upstream_version}\"|" "$package_file"
+perl -0pi -e "s|pinRev \\? \"[^\"]+\"|pinRev \\? \"${tag_sha}\"|" "$package_file"
+perl -0pi -e 's|pinHash \? "sha256-[^"]+"|pinHash \? ""|' "$package_file"
 
 # Build and capture the correct hash from the error
 build_log=$(mktemp)
@@ -121,7 +121,7 @@ log "Source hash: $source_hash"
 
 # Update with the correct hash
 if [[ -n "$source_hash" ]]; then
-  perl -0pi -e "s|hash = \"[^\"]*\";|hash = \"${source_hash}\";|" "$package_file"
+  perl -0pi -e "s|pinHash \\? \"[^\"]*\"|pinHash \\? \"${source_hash}\"|" "$package_file"
 fi
 
 # --- Validate build ---
