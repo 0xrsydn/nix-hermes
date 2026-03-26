@@ -226,12 +226,17 @@ pythonPackages.buildPythonApplication {
   # Don't run tests during build
   doCheck = false;
 
-  # Upstream pyproject.toml is missing minisweagent_path from py-modules.
-  # Also ensure mini-swe-agent/src is importable.
+  # Upstream pyproject.toml may be missing minisweagent_path / mini_swe_runner
+  # from py-modules. Also ensure mini-swe-agent/src is importable.
   postPatch = ''
     # Fix: add minisweagent_path.py to py-modules if missing from pyproject.toml
     if [ -f minisweagent_path.py ] && ! grep -q minisweagent_path pyproject.toml; then
       sed -i 's/py-modules = \[/py-modules = ["minisweagent_path", /' pyproject.toml
+    fi
+
+    # Fix: add mini_swe_runner.py to py-modules if missing (upstream rename)
+    if [ -f mini_swe_runner.py ] && ! grep -q mini_swe_runner pyproject.toml; then
+      sed -i 's/py-modules = \[/py-modules = ["mini_swe_runner", /' pyproject.toml
     fi
 
     # Make mini-swe-agent importable by copying src into the package

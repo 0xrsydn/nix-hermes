@@ -17,12 +17,17 @@
 
     echo "=== Checking key Python modules ==="
     SITE=${hermes-agent}/lib/python3.12/site-packages
-    for mod in agent cli.py gateway cron tools run_agent.py model_tools.py minisweagent_path.py acp_adapter honcho_integration; do
+    for mod in agent cli.py gateway cron tools run_agent.py model_tools.py acp_adapter honcho_integration; do
       if [ ! -e "$SITE/$mod" ] && [ ! -e "$SITE/$mod.py" ]; then
         echo "FAIL: Missing module $mod"
         exit 1
       fi
     done
+    # mini-swe: upstream renamed minisweagent_path.py → mini_swe_runner.py
+    if [ ! -e "$SITE/minisweagent_path.py" ] && [ ! -e "$SITE/mini_swe_runner.py" ]; then
+      echo "FAIL: Missing module minisweagent_path.py or mini_swe_runner.py"
+      exit 1
+    fi
     echo "PASS: All key modules present"
 
     echo "=== Checking wrapped PATH includes runtime deps ==="
