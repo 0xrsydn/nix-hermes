@@ -19,6 +19,7 @@ fi
 
 # --- Resolve latest stable release ---
 log "Fetching latest release from NousResearch/hermes-agent"
+# Use the releases endpoint to find the latest non-prerelease
 release_json=$(gh api /repos/NousResearch/hermes-agent/releases/latest 2>/dev/null || true)
 if [[ -z "$release_json" ]]; then
   echo "Failed to fetch latest release" >&2
@@ -56,17 +57,14 @@ fi
 log "Update available: $current_version → $upstream_version"
 
 # --- Resolve the commit SHA for the release tag ---
+# Properly handle dereferencing annotated tags
 tag_sha=$(gh api "/repos/NousResearch/hermes-agent/git/ref/tags/${release_tag}" --jq '.object.sha' 2>/dev/null || true)
-if [[ -z "$tag_sha" ]]; then
-  # Maybe it's an annotated tag — dereference
-  tag_sha=$(gh api "/repos/NousResearch/hermes-agent/git/ref/tags/${release_tag}" --jq '.object.sha' 2>/dev/null || true)
-  if [[ -n "$tag_sha" ]]; then
-    # Check if it's an annotated tag (type=tag) and dereference
-    tag_type=$(gh api "/repos/NousResearch/hermes-agent/git/tags/${tag_sha}" --jq '.object.type // empty' 2>/dev/null || true)
-    if [[ "$tag_type" == "commit" ]]; then
-      tag_sha=$(gh api "/repos/NousResearch/hermes-agent/git/tags/${tag_sha}" --jq '.object.sha' 2>/dev/null || true)
+if [[ -n "$tag_sha" ]]; then
+    tag_object_type=$(gh api "/repos/NousResearch/hermes-agent/git/ref/tags/${release_tag}" --jq '.object.type' 2>/dev/null || true)
+    if [[ "$tag_object_type" == "tag" ]]; then
+        log "Tag is annotated, dereferencing to commit SHA..."
+        tag_sha=$(gh api "/repos/NousResearch/hermes-agent/git/tags/${tag_sha}" --jq '.object.sha' 2>/dev/null || true)
     fi
-  fi
 fi
 
 if [[ -z "$tag_sha" ]]; then
@@ -83,11 +81,6 @@ log "Release commit SHA: $tag_sha"
 # --- Prefetch source ---
 source_url="https://github.com/NousResearch/hermes-agent/archive/${tag_sha}.tar.gz"
 log "Prefetching source tarball (with submodules via fetchFromGitHub)..."
-
-# Use nix-prefetch-url for the base archive, but we need fetchFromGitHub hash (includes submodules).
-# Best approach: temporarily update package.nix with empty hash and let nix build tell us the right one.
-# Or use nix store prefetch-file for the tarball (no submodules).
-# Since the package uses fetchSubmodules = true, we need the fetchFromGitHub hash.
 
 # Strategy: use nix to evaluate the hash by building with a fake hash
 log "Computing fetchFromGitHub hash (with submodules)..."
@@ -107,7 +100,13 @@ if nix build .#hermes-agent --accept-flake-config >"$build_log" 2>&1; then
   log "Build succeeded with empty hash?! Unexpected, but OK."
   source_hash=""
 else
+  # Nix 2.4+ output format
   source_hash=$(grep -oP 'got: *\Ksha256-[A-Za-z0-9+/=]+' "$build_log" | head -1 || true)
+  if [[ -z "$source_hash" ]]; then
+    # Fallback to older Nix formats or different diagnostic styles
+    source_hash=$(grep -oP 'specified: .*, got: *\Ksha256-[A-Za-z0-9+/=]+' "$build_log" | head -1 || true)
+  fi
+  
   if [[ -z "$source_hash" ]]; then
     log "Build failed but couldn't extract hash. Build log:"
     tail -50 "$build_log" >&2
