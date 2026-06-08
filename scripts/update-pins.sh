@@ -69,7 +69,7 @@ fi
 
 if [[ -z "$tag_sha" ]]; then
   # Last resort: ls-remote
-  tag_sha=$(git ls-remote https://github.com/NousResearch/hermes-agent.git "refs/tags/${release_tag}" | awk '{print $1}' || true)
+  tag_sha=$(git ls-remote https://github.com/NousResearch/hermes-agent.git "refs/tags/${release_tag}^{}" | awk '{print $1}' || true)
 fi
 
 if [[ -z "$tag_sha" ]]; then
