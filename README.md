@@ -4,6 +4,10 @@ Declarative Nix package and NixOS module for [Hermes Agent](https://github.com/N
 
 Everything is configured in Nix. Config, documents, secrets, service — one `nixos-rebuild switch` and it's live.
 
+Upstream pins are promoted through quarantined candidate PRs so a broken Hermes
+release cannot replace the last-known-good package. See
+[the upstream update policy](docs/UPDATE-POLICY.md).
+
 ## Quick Start
 
 ### 1. Add to your flake

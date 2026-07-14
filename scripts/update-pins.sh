@@ -1,157 +1,120 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Auto-update nix-hermes-agent to track latest stable release from NousResearch/hermes-agent.
-# Designed to run in GitHub Actions (see .github/workflows/update-pins.yml).
-# Similar to nix-openclaw's update-pins.sh but tracks releases instead of HEAD.
+# Generate a reviewable stable candidate. The workflow owns commits and PRs;
+# this script intentionally never mutates main or any remote branch.
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 package_file="$repo_root/package.nix"
+report=${HERMES_UPDATE_REPORT:-/tmp/hermes-stable-update.md}
 
-log() {
-  printf '>> %s\n' "$*"
-}
+# shellcheck source=scripts/update-common.sh
+source "$repo_root/scripts/update-common.sh"
 
-if ! command -v jq >/dev/null 2>&1; then
-  echo "jq is required but not installed." >&2
-  exit 1
-fi
+log() { printf '>> %s\n' "$*"; }
+die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
-# --- Resolve latest stable release ---
-log "Fetching latest release from NousResearch/hermes-agent"
-# Use the releases endpoint to find the latest non-prerelease
-release_json=$(gh api /repos/NousResearch/hermes-agent/releases/latest 2>/dev/null || true)
-if [[ -z "$release_json" ]]; then
-  echo "Failed to fetch latest release" >&2
-  exit 1
-fi
+command -v gh >/dev/null || die "gh is required"
+command -v jq >/dev/null || die "jq is required"
+command -v python3 >/dev/null || die "python3 is required"
 
+release_json=$(gh api /repos/NousResearch/hermes-agent/releases/latest)
 release_tag=$(printf '%s' "$release_json" | jq -r '.tag_name // empty')
-release_name=$(printf '%s' "$release_json" | jq -r '.name // empty')
-if [[ -z "$release_tag" ]]; then
-  echo "No release tag found" >&2
-  exit 1
-fi
-log "Latest release: $release_tag ($release_name)"
+[[ -n "$release_tag" ]] || die "latest release has no tag"
 
-# Extract version from release name or tag (e.g. "Hermes Agent v0.3.0 (v2026.3.17)" → "0.3.0")
-upstream_version=$(printf '%s' "$release_name" | grep -oP 'v\K[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
-if [[ -z "$upstream_version" ]]; then
-  # Fallback: try tag itself
-  upstream_version=$(printf '%s' "$release_tag" | grep -oP 'v?\K[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
-fi
-if [[ -z "$upstream_version" ]]; then
-  echo "Could not parse version from release tag=$release_tag name=$release_name" >&2
-  exit 1
-fi
-log "Parsed version: $upstream_version"
+log "Resolving immutable commit for $release_tag"
+tag_object=$(gh api "/repos/NousResearch/hermes-agent/git/ref/tags/${release_tag}")
+tag_sha=$(printf '%s' "$tag_object" | jq -r '.object.sha // empty')
+tag_type=$(printf '%s' "$tag_object" | jq -r '.object.type // empty')
+for _depth in 1 2 3 4 5; do
+  [[ "$tag_type" == "tag" ]] || break
+  tag_object=$(gh api "/repos/NousResearch/hermes-agent/git/tags/${tag_sha}")
+  tag_sha=$(printf '%s' "$tag_object" | jq -r '.object.sha // empty')
+  tag_type=$(printf '%s' "$tag_object" | jq -r '.object.type // empty')
+done
+[[ "$tag_type" == "commit" && -n "$tag_sha" ]] || die "release tag does not resolve to a commit"
 
-# --- Compare with current ---
-current_version=$(awk -F'"' '/pinVersion \? "/{print $2}' "$package_file" | head -1)
-log "Current pinned version: $current_version"
+upstream_version=$(
+  gh api -H "Accept: application/vnd.github.raw+json" \
+    "/repos/NousResearch/hermes-agent/contents/pyproject.toml?ref=${tag_sha}" |
+    python3 -c 'import sys, tomllib; print(tomllib.load(sys.stdin.buffer)["project"]["version"])'
+)
+current_version=$(awk -F'"' '/pinVersion \? "/{print $2; exit}' "$package_file")
+current_rev=$(awk -F'"' '/pinRev \? "/{print $2; exit}' "$package_file")
+[[ -n "$current_version" && -n "$current_rev" ]] || die "could not read current stable pin"
+
+if [[ "$current_rev" == "$tag_sha" ]]; then
+  log "Already tracking $release_tag at $tag_sha"
+  set_output update_available false
+  set_output compatible true
+  exit 0
+fi
 
 if [[ "$current_version" == "$upstream_version" ]]; then
-  log "Already up to date ($current_version). Nothing to do."
-  exit 0
-fi
-log "Update available: $current_version → $upstream_version"
-
-# --- Resolve the commit SHA for the release tag ---
-# Properly handle dereferencing annotated tags
-tag_sha=$(gh api "/repos/NousResearch/hermes-agent/git/ref/tags/${release_tag}" --jq '.object.sha' 2>/dev/null || true)
-if [[ -n "$tag_sha" ]]; then
-    tag_object_type=$(gh api "/repos/NousResearch/hermes-agent/git/ref/tags/${release_tag}" --jq '.object.type' 2>/dev/null || true)
-    if [[ "$tag_object_type" == "tag" ]]; then
-        log "Tag is annotated, dereferencing to commit SHA..."
-        tag_sha=$(gh api "/repos/NousResearch/hermes-agent/git/tags/${tag_sha}" --jq '.object.sha' 2>/dev/null || true)
-    fi
+  die "release version $upstream_version now points at a different commit; review the retag manually"
 fi
 
-if [[ -z "$tag_sha" ]]; then
-  # Last resort: ls-remote
-  tag_sha=$(git ls-remote https://github.com/NousResearch/hermes-agent.git "refs/tags/${release_tag}^{}" | awk '{print $1}' || true)
-fi
+python3 - "$current_version" "$upstream_version" <<'PY' || die "refusing an automatic version downgrade"
+import re, sys
+def version(value):
+    match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:[-+].*)?", value)
+    if not match:
+        raise SystemExit(2)
+    return tuple(map(int, match.groups()))
+raise SystemExit(0 if version(sys.argv[2]) >= version(sys.argv[1]) else 1)
+PY
 
-if [[ -z "$tag_sha" ]]; then
-  echo "Failed to resolve commit SHA for tag $release_tag" >&2
-  exit 1
-fi
-log "Release commit SHA: $tag_sha"
-
-# --- Prefetch source ---
-source_url="https://github.com/NousResearch/hermes-agent/archive/${tag_sha}.tar.gz"
-log "Prefetching source tarball (with submodules via fetchFromGitHub)..."
-
-# Strategy: use nix to evaluate the hash by building with a fake hash
-log "Computing fetchFromGitHub hash (with submodules)..."
-
-# Save original
-cp "$package_file" "$package_file.bak"
-
-# Update pinVersion, pinRev, and set pinHash to empty
-perl -0pi -e "s|pinVersion \\? \"[^\"]+\"|pinVersion \\? \"${upstream_version}\"|" "$package_file"
-perl -0pi -e "s|pinRev \\? \"[^\"]+\"|pinRev \\? \"${tag_sha}\"|" "$package_file"
-perl -0pi -e 's|pinHash \? "sha256-[^"]+"|pinHash \? ""|' "$package_file"
-
-# Build and capture the correct hash from the error
+set_output update_available true
+before_source=$(realize_flake_source ".#hermes-agent")
+backup=$(mktemp)
 build_log=$(mktemp)
-log "Running nix build to get correct hash..."
-if nix build .#hermes-agent --accept-flake-config >"$build_log" 2>&1; then
-  log "Build succeeded with empty hash?! Unexpected, but OK."
-  source_hash=""
-else
-  # Nix 2.4+ output format
-  source_hash=$(grep -oP 'got: *\Ksha256-[A-Za-z0-9+/=]+' "$build_log" | head -1 || true)
-  if [[ -z "$source_hash" ]]; then
-    # Fallback to older Nix formats or different diagnostic styles
-    source_hash=$(grep -oP 'specified: .*, got: *\Ksha256-[A-Za-z0-9+/=]+' "$build_log" | head -1 || true)
-  fi
-  
-  if [[ -z "$source_hash" ]]; then
-    log "Build failed but couldn't extract hash. Build log:"
-    tail -50 "$build_log" >&2
-    cp "$package_file.bak" "$package_file"
-    rm -f "$build_log" "$package_file.bak"
-    exit 1
-  fi
+cp "$package_file" "$backup"
+candidate_ready=false
+cleanup() {
+  [[ "$candidate_ready" == true ]] || cp "$backup" "$package_file"
+  rm -f "$backup" "$build_log"
+}
+trap cleanup EXIT
+
+log "Preparing stable candidate $current_version -> $upstream_version"
+[[ $(grep -c 'pinVersion ? "' "$package_file") == 1 ]] || die "unexpected pinVersion layout"
+[[ $(grep -c 'pinRev ? "' "$package_file") == 1 ]] || die "unexpected pinRev layout"
+[[ $(grep -c 'pinHash ? "' "$package_file") == 1 ]] || die "unexpected pinHash layout"
+perl -0pi -e "s|pinVersion \\? \"[^\"]+\"|pinVersion ? \"${upstream_version}\"|" "$package_file"
+perl -0pi -e "s|pinRev \\? \"[^\"]+\"|pinRev ? \"${tag_sha}\"|" "$package_file"
+perl -0pi -e 's|pinHash \? "[^"]*"|pinHash ? "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="|' "$package_file"
+grep -Fq "pinRev ? \"${tag_sha}\"" "$package_file" || die "failed to update stable revision"
+
+if nix build '.#hermes-agent.src' --no-link --accept-flake-config >"$build_log" 2>&1; then
+  cp "$backup" "$package_file"
+  die "the fake source hash unexpectedly succeeded"
 fi
-rm -f "$build_log"
-log "Source hash: $source_hash"
-
-# Update with the correct hash
-if [[ -n "$source_hash" ]]; then
-  perl -0pi -e "s|pinHash \\? \"[^\"]*\"|pinHash \\? \"${source_hash}\"|" "$package_file"
+source_hash=$(extract_sri_hash "$build_log")
+if [[ -z "$source_hash" ]]; then
+  cp "$backup" "$package_file"
+  tail -80 "$build_log" >&2
+  die "could not extract the candidate source hash"
 fi
+perl -0pi -e "s|pinHash \\? \"[^\"]*\"|pinHash ? \"${source_hash}\"|" "$package_file"
 
-# --- Validate build ---
-build_log=$(mktemp)
-log "Validating full build..."
-if ! nix build .#hermes-agent --accept-flake-config >"$build_log" 2>&1; then
-  log "Build validation FAILED. This likely means dependencies changed upstream."
-  log "Build log (last 100 lines):"
-  tail -100 "$build_log" >&2
-  cp "$package_file.bak" "$package_file"
-  rm -f "$build_log" "$package_file.bak"
-  exit 1
-fi
-rm -f "$build_log" "$package_file.bak"
-log "Build validation PASSED ✅"
+after_source=$(realize_flake_source ".#hermes-agent")
+build_status=$(
+  run_validation "$build_log" nix flake check --keep-going --no-write-lock-file --accept-flake-config
+)
 
-# --- Commit and push ---
-if git diff --quiet "$package_file"; then
-  log "No changes to commit (shouldn't happen)"
-  exit 0
-fi
+source_args=()
+[[ -n "$before_source" ]] && source_args+=(--before-source "$before_source")
+[[ -n "$after_source" ]] && source_args+=(--after-source "$after_source")
+python3 "$repo_root/scripts/render-update-report.py" \
+  --channel stable \
+  --current-version "$current_version" --candidate-version "$upstream_version" \
+  --current-rev "$current_rev" --candidate-rev "$tag_sha" \
+  "${source_args[@]}" \
+  --build-status "$build_status" --build-log "$build_log" \
+  --upstream-url "https://github.com/NousResearch/hermes-agent/releases/tag/${release_tag}" \
+  --output "$report"
 
-log "Committing update"
-git add "$package_file"
-git commit -m "🤖 bump hermes-agent ${current_version} → ${upstream_version} (${release_tag})" \
-  -m "Upstream: https://github.com/NousResearch/hermes-agent/releases/tag/${release_tag}" \
-  -m "Tests: nix build .#hermes-agent (passed)"
-
-log "Pushing to main"
-git fetch origin main
-git rebase origin/main
-git push origin HEAD:main
-
-log "Done! Updated hermes-agent to ${upstream_version} (${release_tag})"
+publish_summary "$report"
+set_output compatible "$([[ "$build_status" == passed ]] && echo true || echo false)"
+candidate_ready=true
+log "Candidate prepared; validation: $build_status. The workflow will open or update its PR."

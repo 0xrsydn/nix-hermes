@@ -17,6 +17,21 @@
       let
         pkgs = import nixpkgs { inherit system; };
         inherit (pkgs) lib;
+        nightlyPackage = self.packages.${system}.hermes-agent-nightly;
+        nightlyChecks =
+          (import ./checks.nix {
+            inherit pkgs;
+            hermes-agent = nightlyPackage;
+          })
+          // {
+            skills-coexistence = import ./tests/skills-coexistence.nix {
+              inherit self nixpkgs system;
+              hermes-agent = nightlyPackage;
+            };
+          };
+        nightlyCheckSuite = pkgs.linkFarm "hermes-agent-nightly-checks" (
+          lib.mapAttrsToList (name: path: { inherit name path; }) nightlyChecks
+        );
       in
       {
         packages = {
@@ -30,17 +45,17 @@
             inherit pkgs;
             inherit (self.packages.${system}) hermes-agent;
           })
-          // (lib.mapAttrs' (name: value: lib.nameValuePair "nightly-${name}" value) (
-            import ./checks.nix {
-              inherit pkgs;
-              hermes-agent = self.packages.${system}.hermes-agent-nightly;
-            }
-          ))
           // {
             skills-coexistence = import ./tests/skills-coexistence.nix {
               inherit self nixpkgs system;
             };
           };
+
+        # Nightly tracks mutable upstream HEAD. Keep it available for explicit
+        # validation without making upstream breakage fail the stable channel.
+        legacyPackages.nightlyChecks = nightlyChecks // {
+          all = nightlyCheckSuite;
+        };
 
         devShells.default = pkgs.mkShell {
           packages = [ self.packages.${system}.hermes-agent ];

@@ -6,8 +6,13 @@ on:
     - cron: "0 4 * * *"
   workflow_dispatch: {}
 
+concurrency:
+  group: hermes-agent-nightly-candidate
+  cancel-in-progress: true
+
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   update:
@@ -21,10 +26,36 @@ jobs:
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v13
 
+      - name: Require PR automation token
+        env:
+          HERMES_UPDATE_TOKEN: ${{ secrets.HERMES_UPDATE_TOKEN }}
+        run: |
+          if [[ -z "$HERMES_UPDATE_TOKEN" ]]; then
+            echo "Configure HERMES_UPDATE_TOKEN so candidate PRs receive required CI checks." >&2
+            exit 1
+          fi
+
       - name: Run nightly updater
+        id: update
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HERMES_UPDATE_REPORT: ${{ runner.temp }}/hermes-nightly-update.md
         run: |
-          git config user.name "nix-hermes-agent-bot"
-          git config user.email "bot@nix-hermes-agent.local"
           scripts/update-nightly.sh
+
+      - name: Open or update candidate PR
+        if: steps.update.outputs.update_available == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.HERMES_UPDATE_TOKEN }}
+          branch: automation/hermes-agent-nightly-candidate
+          delete-branch: true
+          commit-message: "chore: update Hermes Agent nightly candidate"
+          title: "chore: update Hermes Agent nightly candidate"
+          body-path: ${{ runner.temp }}/hermes-nightly-update.md
+
+      - name: Mark incompatible candidate
+        if: steps.update.outputs.update_available == 'true' && steps.update.outputs.compatible != 'true'
+        run: |
+          echo "The candidate PR was created, but nightly validation failed." >&2
+          exit 1

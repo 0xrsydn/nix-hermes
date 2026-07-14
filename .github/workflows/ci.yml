@@ -19,6 +19,10 @@ jobs:
         run: find . -name '*.nix' -not -path './_*' | xargs nix run nixpkgs#nixfmt-rfc-style -- --check
       - name: Lint (statix)
         run: nix run nixpkgs#statix -- check .
+      - name: Test update impact reporter
+        run: python3 -m unittest tests/test_render_update_report.py
+      - name: Test updater helpers
+        run: bash tests/update-common.sh
 
   check:
     needs: lint
