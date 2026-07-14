@@ -1,102 +1,96 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Auto-update nightly.nix to track HEAD of NousResearch/hermes-agent main branch.
-# Designed to run in GitHub Actions (see .github/workflows/update-nightly.yml).
+# Generate a reviewable nightly candidate without pushing to main.
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 nightly_file="$repo_root/nightly.nix"
+report=${HERMES_UPDATE_REPORT:-/tmp/hermes-nightly-update.md}
 
-log() {
-  printf '>> %s\n' "$*"
-}
+# shellcheck source=scripts/update-common.sh
+source "$repo_root/scripts/update-common.sh"
 
-# --- Resolve HEAD of main ---
-log "Fetching HEAD of NousResearch/hermes-agent main branch"
-head_sha=$(git ls-remote https://github.com/NousResearch/hermes-agent.git refs/heads/main | awk '{print $1}')
-if [[ -z "$head_sha" ]]; then
-  echo "Failed to resolve HEAD of main" >&2
-  exit 1
-fi
-log "HEAD SHA: $head_sha"
+log() { printf '>> %s\n' "$*"; }
+die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
-# --- Compare with current ---
-current_rev=$(awk -F'"' '/pinRev = /{print $2}' "$nightly_file" | head -1)
-log "Current pinned rev: $current_rev"
+command -v gh >/dev/null || die "gh is required"
+command -v python3 >/dev/null || die "python3 is required"
 
+head_sha=$(gh api /repos/NousResearch/hermes-agent/commits/main --jq '.sha')
+[[ -n "$head_sha" ]] || die "failed to resolve upstream main"
+current_rev=$(awk -F'"' '/pinRev = /{print $2; exit}' "$nightly_file")
+current_version=$(awk -F'"' '/pinVersion = /{print $2; exit}' "$nightly_file")
+[[ -n "$current_rev" && -n "$current_version" ]] || die "could not read current nightly pin"
 if [[ "$current_rev" == "$head_sha" ]]; then
-  log "Already up to date ($current_rev). Nothing to do."
+  log "Nightly already tracks $head_sha"
+  set_output update_available false
+  set_output compatible true
   exit 0
 fi
-log "Update available: ${current_rev:0:12} → ${head_sha:0:12}"
 
-# --- Determine base version from package.nix ---
-base_version=$(awk -F'"' '/pinVersion \? "/{print $2}' "$repo_root/package.nix" | head -1)
-if [[ -z "$base_version" ]]; then
-  base_version="0.0.0"
-fi
-nightly_version="${base_version}-unstable-$(date -u +%Y-%m-%d)"
-log "Nightly version: $nightly_version"
+upstream_version=$(
+  gh api -H "Accept: application/vnd.github.raw+json" \
+    "/repos/NousResearch/hermes-agent/contents/pyproject.toml?ref=${head_sha}" |
+    python3 -c 'import sys, tomllib; print(tomllib.load(sys.stdin.buffer)["project"]["version"])'
+)
+python3 - "$upstream_version" <<'PY' || die "upstream pyproject contains an invalid version"
+import re, sys
+raise SystemExit(0 if re.fullmatch(r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?", sys.argv[1]) else 1)
+PY
+nightly_version="${upstream_version}-unstable-$(date -u +%Y-%m-%d).${head_sha:0:8}"
+set_output update_available true
 
-# --- Update nightly.nix with new rev and empty hash ---
+before_source=$(realize_flake_source ".#hermes-agent-nightly")
+backup=$(mktemp)
+build_log=$(mktemp)
+cp "$nightly_file" "$backup"
+candidate_ready=false
+cleanup() {
+  [[ "$candidate_ready" == true ]] || cp "$backup" "$nightly_file"
+  rm -f "$backup" "$build_log"
+}
+trap cleanup EXIT
+
+log "Preparing nightly candidate ${current_rev:0:12} -> ${head_sha:0:12}"
+[[ $(grep -c 'pinVersion = "' "$nightly_file") == 1 ]] || die "unexpected nightly version layout"
+[[ $(grep -c 'pinRev = "' "$nightly_file") == 1 ]] || die "unexpected nightly revision layout"
+[[ $(grep -c 'pinHash = "' "$nightly_file") == 1 ]] || die "unexpected nightly hash layout"
 perl -0pi -e "s|pinVersion = \"[^\"]+\";|pinVersion = \"${nightly_version}\";|" "$nightly_file"
 perl -0pi -e "s|pinRev = \"[^\"]+\";|pinRev = \"${head_sha}\";|" "$nightly_file"
-perl -0pi -e 's|pinHash = "[^"]*";|pinHash = "";|' "$nightly_file"
+perl -0pi -e 's|pinHash = "[^"]*";|pinHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";|' "$nightly_file"
+grep -Fq "pinRev = \"${head_sha}\";" "$nightly_file" || die "failed to update nightly revision"
 
-# --- Prefetch to get correct hash ---
-build_log=$(mktemp)
-log "Running nix build to compute source hash..."
-if nix build .#hermes-agent-nightly --accept-flake-config >"$build_log" 2>&1; then
-  log "Build succeeded with empty hash?! Unexpected, but OK."
-  source_hash=""
-else
-  source_hash=$(grep -oP 'got: *\Ksha256-[A-Za-z0-9+/=]+' "$build_log" | head -1 || true)
-  if [[ -z "$source_hash" ]]; then
-    log "Build failed but couldn't extract hash. Build log:"
-    tail -50 "$build_log" >&2
-    # Restore original
-    git checkout -- "$nightly_file"
-    rm -f "$build_log"
-    exit 1
-  fi
+if nix build '.#hermes-agent-nightly.src' --no-link --accept-flake-config >"$build_log" 2>&1; then
+  cp "$backup" "$nightly_file"
+  die "the fake source hash unexpectedly succeeded"
 fi
-rm -f "$build_log"
-log "Source hash: $source_hash"
-
-# Update with the correct hash
-if [[ -n "$source_hash" ]]; then
-  perl -0pi -e "s|pinHash = \"[^\"]*\";|pinHash = \"${source_hash}\";|" "$nightly_file"
+source_hash=$(extract_sri_hash "$build_log")
+if [[ -z "$source_hash" ]]; then
+  cp "$backup" "$nightly_file"
+  tail -80 "$build_log" >&2
+  die "could not extract the candidate source hash"
 fi
+perl -0pi -e "s|pinHash = \"[^\"]*\";|pinHash = \"${source_hash}\";|" "$nightly_file"
 
-# --- Validate build ---
-build_log=$(mktemp)
-log "Validating full nightly build..."
-if ! nix build .#hermes-agent-nightly --accept-flake-config >"$build_log" 2>&1; then
-  log "Build validation FAILED. This likely means dependencies changed upstream."
-  log "Build log (last 100 lines):"
-  tail -100 "$build_log" >&2
-  git checkout -- "$nightly_file"
-  rm -f "$build_log"
-  exit 1
-fi
-rm -f "$build_log"
-log "Build validation PASSED ✅"
+after_source=$(realize_flake_source ".#hermes-agent-nightly")
+system=$(current_nix_system)
+build_status=$(
+  run_validation "$build_log" nix build ".#legacyPackages.${system}.nightlyChecks.all" --accept-flake-config
+)
 
-# --- Commit and push ---
-if git diff --quiet "$nightly_file"; then
-  log "No changes to commit (shouldn't happen)"
-  exit 0
-fi
+source_args=()
+[[ -n "$before_source" ]] && source_args+=(--before-source "$before_source")
+[[ -n "$after_source" ]] && source_args+=(--after-source "$after_source")
+python3 "$repo_root/scripts/render-update-report.py" \
+  --channel nightly \
+  --current-version "$current_version" --candidate-version "$nightly_version" \
+  --current-rev "$current_rev" --candidate-rev "$head_sha" \
+  "${source_args[@]}" \
+  --build-status "$build_status" --build-log "$build_log" \
+  --upstream-url "https://github.com/NousResearch/hermes-agent/commit/${head_sha}" \
+  --output "$report"
 
-log "Committing nightly update"
-git add "$nightly_file"
-git commit -m "🤖 bump hermes-agent-nightly to ${head_sha:0:12} (${nightly_version})" \
-  -m "Upstream HEAD: https://github.com/NousResearch/hermes-agent/commit/${head_sha}" \
-  -m "Tests: nix build .#hermes-agent-nightly (passed)"
-
-log "Pushing to main"
-git fetch origin main
-git rebase origin/main
-git push origin HEAD:main
-
-log "Done! Updated hermes-agent-nightly to ${head_sha:0:12} (${nightly_version})"
+publish_summary "$report"
+set_output compatible "$([[ "$build_status" == passed ]] && echo true || echo false)"
+candidate_ready=true
+log "Candidate prepared; validation: $build_status. The workflow will open or update its PR."

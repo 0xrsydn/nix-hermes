@@ -9,9 +9,9 @@
   ripgrep,
   ffmpeg,
   git,
-  pinVersion ? "0.4.0",
-  pinRev ? "8416bc2142ad7494b3d72b055cd5a86a80472fe4",
-  pinHash ? "sha256-dKilXoJbu5thhCRpDYKTX9fAOq1JTqdBvuf9Ji1iY64=",
+  pinVersion ? "0.16.0",
+  pinRev ? "3c231eb3979ab9c57d5cd6d02f1d577a3b718b43",
+  pinHash ? "sha256-ngpkopVczNrT0bfCXHm38QjgrZT96Bm/rO89NA/ls3Y=",
 }:
 
 let
@@ -173,6 +173,7 @@ pythonPackages.buildPythonApplication {
 
   # litellm is compromised — strip it from wheel metadata so pythonRuntimeDepsCheck passes
   pythonRemoveDeps = [ "litellm" ];
+  pythonRelaxDeps = true;
 
   dependencies = with pythonPackages; [
     # Core
@@ -184,10 +185,15 @@ pythonPackages.buildPythonApplication {
     rich
     tenacity
     pyyaml
+    ruamel-yaml
     requests
     jinja2
+    markdown
     pydantic
     prompt-toolkit
+    psutil
+    pathspec
+    fastapi
     # Tools
     firecrawl-py
     fal-client

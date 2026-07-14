@@ -17,7 +17,7 @@
 
     echo "=== Checking key Python modules ==="
     SITE=${hermes-agent}/lib/python3.12/site-packages
-    for mod in agent cli.py gateway cron tools run_agent.py model_tools.py acp_adapter honcho_integration; do
+    for mod in agent cli.py gateway cron tools run_agent.py model_tools.py acp_adapter; do
       if [ ! -e "$SITE/$mod" ] && [ ! -e "$SITE/$mod.py" ]; then
         echo "FAIL: Missing module $mod"
         exit 1
@@ -94,7 +94,9 @@
     export HOME=$(mktemp -d)
 
     echo "=== Running hermes doctor ==="
-    ${hermes-agent}/bin/hermes doctor 2>&1 | grep -q "Python" || (echo "FAIL: doctor"; exit 1)
+    output=$(${hermes-agent}/bin/hermes doctor 2>&1 || true)
+    printf '%s\n' "$output"
+    printf '%s\n' "$output" | grep -q "Python" || (echo "FAIL: doctor"; exit 1)
     echo "PASS: Doctor runs successfully"
 
     mkdir -p $out

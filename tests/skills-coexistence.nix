@@ -2,6 +2,7 @@
   self,
   nixpkgs,
   system,
+  hermes-agent ? self.packages.${system}.hermes-agent,
 }:
 
 let
@@ -21,7 +22,7 @@ pkgs.testers.runNixOSTest {
 
       services.hermes-agent = {
         enable = true;
-        package = self.packages.${system}.hermes-agent;
+        package = hermes-agent;
         skills = {
           bundled.enable = false;
           custom.repo-watch = {
