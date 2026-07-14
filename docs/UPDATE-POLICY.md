@@ -32,11 +32,11 @@ updater job red, but does not discard the candidate.
 ## Repository token
 
 Set the Actions secret `HERMES_UPDATE_TOKEN` to a fine-grained PAT or GitHub App
-token with repository contents and pull-request write access. GitHub suppresses
-new workflow runs for PRs created with the default `GITHUB_TOKEN`; the dedicated
-token allows the candidate PR to receive normal required checks. Scheduled
-updates fail clearly when this secret is absent rather than opening an unchecked
-PR.
+token with repository contents and pull-request write access. Pull requests
+created with the default `GITHUB_TOKEN` can start workflow runs, but GitHub puts
+those runs into an approval-required state. The dedicated token lets candidate
+checks start automatically. Scheduled updates fail clearly when this secret is
+absent rather than opening a candidate that waits for manual workflow approval.
 
 Protect `main` with the ordinary `CI / check` status and the
 `Nightly Candidate / check` status. The latter passes without installing Nix
