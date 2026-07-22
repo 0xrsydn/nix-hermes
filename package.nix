@@ -206,6 +206,8 @@ pythonPackages.buildPythonApplication {
     platformdirs
     # Skills Hub
     pyjwt
+    cryptography
+    pillow
     # Messaging
     python-telegram-bot
     discordpy
