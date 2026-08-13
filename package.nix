@@ -4,6 +4,7 @@
   python312,
   fetchFromGitHub,
   fetchPypi,
+  fetchurl,
   makeWrapper,
   nodejs_22,
   ripgrep,
@@ -32,6 +33,11 @@ let
       });
       apscheduler = prev.apscheduler.overridePythonAttrs (_old: {
         # apscheduler processpool tests fail in the nix sandbox (signal handling)
+        doCheck = false;
+      });
+      slack-bolt = prev.slack-bolt.overridePythonAttrs (_old: {
+        # slack-bolt 1.27.0 tests crash at interpreter shutdown in the nix
+        # sandbox (_enter_buffered_busy: could not acquire lock for stderr)
         doCheck = false;
       });
       tenacity = prev.tenacity.overridePythonAttrs (_old: rec {
@@ -135,6 +141,21 @@ let
     pythonImportsCheck = [ "parallel" ];
   };
 
+  nemo-relay = pythonPackages.buildPythonPackage rec {
+    pname = "nemo-relay";
+    version = "0.6.0";
+    # Upstream 0.6.x ships only compiled abi3 wheels on PyPI (no buildable
+    # sdist for the Nix sandbox); the prebuilt manylinux wheel has no base
+    # runtime dependencies.
+    format = "wheel";
+    src = fetchurl {
+      url = "https://files.pythonhosted.org/packages/a3/f4/d1dfaed022da0f6f14765a122867f976a69cc520fe1faaf99757f5719d1f/nemo_relay-0.6.0-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl";
+      hash = "sha256-hJ2qnkUVisWB5UUG4PzHok9VfR7Qbb3AdPXeegA5PLw=";
+    };
+    doCheck = false;
+    pythonImportsCheck = [ "nemo_relay" ];
+  };
+
   agent-client-protocol = pythonPackages.buildPythonPackage rec {
     pname = "agent-client-protocol";
     version = "0.8.1";
@@ -170,6 +191,10 @@ pythonPackages.buildPythonApplication {
   pyproject = true;
 
   build-system = [ pythonPackages.setuptools ];
+
+  # Upstream setup.py refuses wheel builds unless HERMES_NIX_BUILD=1 is set;
+  # their nix/python.nix sets it in the build sandbox (see setup.py ~line 32).
+  env.HERMES_NIX_BUILD = "1";
 
   # litellm is compromised — strip it from wheel metadata so pythonRuntimeDepsCheck passes
   pythonRemoveDeps = [ "litellm" ];
@@ -231,6 +256,8 @@ pythonPackages.buildPythonApplication {
     mcp
     # ACP
     agent-client-protocol
+    # Relay (lazy-imported per profile via agent/relay_runtime.py)
+    nemo-relay
   ];
 
   nativeBuildInputs = [ makeWrapper ];
@@ -241,6 +268,11 @@ pythonPackages.buildPythonApplication {
   # Upstream pyproject.toml may be missing minisweagent_path / mini_swe_runner
   # from py-modules. Also ensure mini-swe-agent/src is importable.
   postPatch = ''
+    # Relax pinned build backend: upstream requires setuptools==83.0.0, nixpkgs
+    # (locked c06b4ae) ships 80.10.1; the exact pin fails the pypa build check.
+    # No-op on releases that do not pin setuptools exactly.
+    sed -i 's/setuptools==83.0.0/setuptools>=80/' pyproject.toml
+
     # Fix: add minisweagent_path.py to py-modules if missing from pyproject.toml
     if [ -f minisweagent_path.py ] && ! grep -q minisweagent_path pyproject.toml; then
       sed -i 's/py-modules = \[/py-modules = ["minisweagent_path", /' pyproject.toml
