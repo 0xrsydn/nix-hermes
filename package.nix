@@ -10,9 +10,9 @@
   ripgrep,
   ffmpeg,
   git,
-  pinVersion ? "0.20.0",
-  pinRev ? "3c27eb6234bf91b8ceee9e9071591b31e9b148cb",
-  pinHash ? "sha256-S6TSGgpf37N8YgbTv70dT+LaPiiaQ4/lJV+js2hnCPk=",
+  pinVersion ? "0.20.1",
+  pinRev ? "f80f453ae0679347e38abc917c7f94f717bf96c5",
+  pinHash ? "sha256-A+pprddWqewhUjD8d+PLdTHAO5SZV6YwPhJrC2T2dFE=",
 }:
 
 let
