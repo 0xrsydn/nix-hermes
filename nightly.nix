@@ -2,7 +2,7 @@
 # Auto-updated by scripts/update-nightly.sh — do not edit manually.
 { pkgs }:
 pkgs.callPackage ./package.nix {
-  pinVersion = "0.20.1-unstable-2026-08-14.9504edba";
-  pinRev = "9504edbaea29ce249864a1be05819d972f8fae8d";
-  pinHash = "sha256-hZHeylSgU71r/x3WMOrmcARcKSx5y17l9vwFgbde5ks=";
+  pinVersion = "0.20.2-unstable-2026-08-17.3b9a963b";
+  pinRev = "3b9a963b8e5cdb804a422755bed9a60fcd778273";
+  pinHash = "sha256-fq0Qci8Ez0Bn7MVmz73kZfpl9zA+0bAKrOEt6ExKt8I=";
 }
