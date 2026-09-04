@@ -12,7 +12,7 @@
     echo "PASS: All binaries present"
 
     echo "=== Checking version ==="
-    ${hermes-agent}/bin/hermes version 2>&1 | grep -q "Hermes Agent" || (echo "FAIL: version check"; exit 1)
+    ${hermes-agent}/bin/hermes --version 2>&1 | grep -q "Hermes Agent" || (echo "FAIL: version check"; exit 1)
     echo "PASS: Version check"
 
     echo "=== Checking key Python modules ==="
