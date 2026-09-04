@@ -156,6 +156,21 @@ let
     pythonImportsCheck = [ "nemo_relay" ];
   };
 
+  firecrawl-anydoc = pythonPackages.buildPythonPackage rec {
+    pname = "firecrawl-anydoc";
+    version = "0.2.4";
+    # Upstream ships only Rust/maturin artifacts; the prebuilt abi3 wheel has
+    # no base runtime dependencies (PyPI requires_dist is empty). x86_64-linux
+    # wheel only — matches the system the flake's checks target.
+    format = "wheel";
+    src = fetchurl {
+      url = "https://files.pythonhosted.org/packages/fc/16/feeca9705bfdb237f1cb69ede0b373b144c0d51df4297e595a74b815557e/firecrawl_anydoc-0.2.4-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl";
+      hash = "sha256-DlrtAb9tTlxYjTNjiIKT8s7rn+sARJoy4LqZN5fPC9M=";
+    };
+    doCheck = false;
+    pythonImportsCheck = [ "anydoc" ];
+  };
+
   agent-client-protocol = pythonPackages.buildPythonPackage rec {
     pname = "agent-client-protocol";
     version = "0.8.1";
@@ -223,6 +238,10 @@ pythonPackages.buildPythonApplication {
     firecrawl-py
     fal-client
     parallel-web
+    # Document conversion (upstream >=0.21.0, firecrawl-anydoc==0.2.4)
+    firecrawl-anydoc
+    # tool_search BM25 stemming (upstream >=0.20.6, snowballstemmer==3.1.1)
+    snowballstemmer
     # TTS
     edge-tts
     faster-whisper
